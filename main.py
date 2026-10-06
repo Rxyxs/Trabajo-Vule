@@ -139,15 +139,20 @@ def procesar_datos(df_consolidados, rangos_df):
     df['KILOMETROS'] = pd.to_numeric(df['KILOMETROS'], errors='coerce')
     df['LITROS'] = pd.to_numeric(df['LITROS'], errors='coerce')
 
-    # Formatear fechas
-    df['FECHA REAL'] = pd.to_datetime(df['FECHA REAL'], errors='coerce').dt.strftime('%d-%m-%Y')
-    df['FECHA PLANILLA'] = pd.to_datetime(df['FECHA PLANILLA'], errors='coerce').dt.strftime('%d-%m-%Y')
+    # Convertir fechas (se ordena con la fecha real, no con el texto dd-mm-aaaa,
+    # que pondria el 02-01 antes que el 15-12)
+    df['FECHA REAL'] = pd.to_datetime(df['FECHA REAL'], errors='coerce')
+    df['FECHA PLANILLA'] = pd.to_datetime(df['FECHA PLANILLA'], errors='coerce')
 
     # Limpieza de hora
     df['HORA'] = df['HORA'].apply(limpiar_hora)
 
     # Ordenar datos para calculo de KMACC
     df = df.sort_values(by=['PATENTE', 'FECHA REAL', 'HORA'], na_position='last')
+
+    # Formatear fechas para el reporte
+    df['FECHA REAL'] = df['FECHA REAL'].dt.strftime('%d-%m-%Y')
+    df['FECHA PLANILLA'] = df['FECHA PLANILLA'].dt.strftime('%d-%m-%Y')
 
     # Calculos iniciales de referencia en Python
     df['KMACC'] = df.groupby('PATENTE')['KILOMETROS'].diff().fillna(0)
@@ -166,6 +171,9 @@ def procesar_datos(df_consolidados, rangos_df):
 
     # Evaluacion de la columna REV (Revision)
     def evaluar_revision(row):
+        # Sin lectura anterior del mismo bus (KMACC = 0) no hay rendimiento que revisar
+        if not row['KMACC'] > 0:
+            return 0
         if pd.notna(row['RENDIMIENTO']) and pd.notna(row['DESDE']) and row['RENDIMIENTO'] < row['DESDE']:
             return 'BR'
         elif pd.notna(row['RENDIMIENTO']) and pd.notna(row['HASTA']) and row['RENDIMIENTO'] > row['HASTA']:

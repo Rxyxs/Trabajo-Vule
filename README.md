@@ -1,132 +1,65 @@
-# Trabajo-Vule
-Trabajo para consolidar datos para empresa de buses
+[ 🇨🇱 Español ] | [ 🇺🇸 [English](README.en.md) ]
 
-# Plantilla Interactiva para Consolidación de Datos
-### Por Pablo Reyes
+# Consolidación de rendimiento de combustible para una flota de buses
 
-## Propósito General del Código
-El propósito es crear una herramienta automatizada para procesar y consolidar múltiples archivos Excel que contengan datos. 
-Permite:
-•	Normalizar datos importantes (como horas y patentes).
-•	Eliminar información irrelevante.
-•	Generar un archivo consolidado, que esté listo para análisis o reportes.
+[![tests](https://github.com/Rxyxs/Trabajo-Vule/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/Trabajo-Vule/actions/workflows/tests.yml)
 
-## ¿Qué es el PATH?
-•	El PATH es una lista de ubicaciones en tu computadora donde el sistema operativo busca los programas que intentas ejecutar.
+Herramienta que hice en un trabajo para una empresa de buses. Cada terminal registraba las cargas de combustible en su propia planilla Excel. Este script une todas esas planillas en un solo reporte, calcula el rendimiento (km por litro) de cada carga y marca las que quedan fuera del rango esperado para el modelo y la norma de emisiones de cada bus.
 
-# Requisitos Técnicos 
-•	Versión de Python Recomendado:
-o	Python 3.8 o 3.9 es ideal para garantizar compatibilidad con las bibliotecas utilizadas. Descargar desde python.org.
-o	Versiones más nuevas, como Python 3.10, pueden funcionar, pero algunas bibliotecas podrían necesitar actualizaciones.
-•	Visual Studio:
-o	Descargar Visual Studio 2019 o superior desde Visual Studio.
-o	Durante la instalación, selecciona la carga de trabajo de Desarrollo con Python.
+El repositorio no trae datos de la empresa. `generar_ejemplo.py` crea planillas ficticias con la misma estructura para poder correrlo.
 
-•	Configurar Python en Visual Studio:
-o	Hay que asegurar tener instalado Python 3.8 o 3.9. 
-o	Al instalar Python, hay una opción llamada "Add Python to PATH". Esta opción es clave para garantizar que Python funcione correctamente desde la línea de comandos o desde programas como Visual Studio.
+## El problema
 
-## Librerías Necesarias
-¿Qué es una "librería"?
-En programación, las librerías son conjuntos de herramientas y funciones ya creadas que te ayudan a realizar tareas específicas sin tener que programarlas desde cero. 
-El código utiliza varias librerías, cada una con un propósito específico:
-1.	Pandas:
-o	Uso: Manipula y analiza datos estructurados (tablas, hojas Excel).
-o	Instalación: pip install pandas.
-2.	Openpyxl:
-o	Uso: Trabaja con archivos Excel en formato .xlsx. Permite leer, escribir y manipular estos archivos.
-o	Instalación: pip install openpyxl.
-3.	IPython:
-o	Uso: Ofrece herramientas interactivas para Jupyter Notebooks, como la capacidad de mostrar widgets y contenido dinámico.
-o	Instalación: pip install ipython.
-4.	Ipywidgets:
-o	Uso: Crea interfaces gráficas en Jupyter Notebooks (botones, campos de texto, carga de archivos, etc.).
-o	Instalación: pip install ipywidgets.
-5.	Os:
-o	Uso: Gestiona funciones del sistema operativo como rutas de archivos. Es una biblioteca estándar de Python, por lo que no necesita instalación.
-6.	Re:
-o	Uso: Trabaja con expresiones regulares para buscar, reemplazar y analizar texto. Es una biblioteca estándar de Python, por lo que no necesita instalación.
-7.	Io:
-o	Uso: Maneja flujos de datos en memoria (lectura/escritura). Es una biblioteca estándar de Python, por lo que no necesita instalación.
-8.	Unicodedata:
-o	Uso: Normaliza texto en caracteres Unicode (útil para limpiar texto o manejar caracteres especiales). Es una biblioteca estándar de Python, por lo que no necesita instalación.
+- **Muchas planillas, un solo análisis.** Cada terminal tenía su propio archivo, con la hoja `B.D`. Para revisar el rendimiento de la flota había que juntarlos a mano.
+- **Datos digitados a mano.** Las horas venían como `830`, `8:30`, `22.40` o `23:05:00`, y las patentes con espacios y minúsculas distintas.
+- **El rendimiento depende de la lectura anterior.** Los km recorridos de una carga son el odómetro actual menos el de la carga anterior **del mismo bus**, que puede haber cargado en otro terminal. Por eso hay que ordenar todas las cargas juntas, por patente, fecha y hora.
+- **Cada bus tiene su propio rango normal.** El rendimiento esperado depende del modelo y de la norma (Euro 5, Euro 6…), que vienen en un archivo de rangos aparte.
 
-## Análisis Funcional del Código
-El código se centra en procesar y consolidar datos de múltiples archivos Excel. 
-Se divide en varias funciones principales:
-### 1. Procesar Hora
-Esta función estandariza el formato de horas. Convierte entradas como "20 25" o "0:033" al formato estándar HH:MM:SS. Si no puede procesar el valor, lo devuelve tal cual. Esto asegura que todas las horas en el archivo sigan un formato uniforme.
-### 2. Normalizar Patentes
-La normalización de patentes elimina caracteres especiales como puntos, guiones y espacios, y convierte todo a mayúsculas. Por ejemplo, una patente como "AB.123-CD" se convierte en "AB123CD". Esto facilita análisis posteriores y garantiza uniformidad.
-### 3. Eliminar Filas Vacías Condicionalmente
-Esta función elimina filas de una tabla donde todas las columnas claves (por ejemplo, "TERMINAL", "PATENTE") estén vacías o contengan solo espacios en blanco. Esto es útil para limpiar datos y eliminar información irrelevante.
+## Qué hace
 
+```
+entrada_consolidados/*.xlsx  ─┐
+  (una planilla por terminal) │   limpiar horas y patentes
+                              ├─► ordenar por patente, fecha y hora ─► KMACC y rendimiento ─► Salida/REPORTE_RENDIMIENTO.xlsx
+entrada_rangos/Rangos.xlsx   ─┘   cruzar con el rango de su modelo y norma                       (fórmulas vivas y colores)
+  (hojas "detalle" y "rango")
+```
 
-### 4. Procesar Archivos
-Esta función realiza un procesamiento completo de un archivo Excel:
-•	Elimina columnas innecesarias: Identifica columnas irrelevantes como "Unnamed: 14" o "REJILLA" y las elimina.
-•	Estandariza horas y patentes: Aplica las funciones anteriores para uniformizar datos.
-•	Elimina filas vacías: Usa la función de eliminación condicional para limpiar la tabla.
-•	Añade columnas vacías: Inserta columnas sin título cuando faltan ciertas combinaciones de datos.
-### 5. Consolidar Archivos
-Esta función interactiva permite al usuario cargar múltiples archivos Excel desde su computadora. 
-Una vez cargados:
-•	Los procesa uno por uno, limpiando y ajustando su contenido.
-•	Consolida todos los datos en un único archivo Excel.
-•	Ofrece una interfaz para seleccionar la carpeta donde guardar el archivo final.
+1. Lee todas las planillas de `entrada_consolidados/` y deja fuera, con un aviso, las que no traen las 13 columnas requeridas.
+2. Deja las horas en `HH:MM` y las patentes en mayúsculas sin espacios.
+3. Ordena por patente, fecha real y hora, y calcula `KMACC` (km desde la carga anterior del mismo bus) y `RENDIMIENTO` (`KMACC / LITROS`).
+4. Cruza cada bus con su rango (`DESDE`–`HASTA`) según su modelo y norma.
+5. Marca la columna `REV`: `BR` si el rendimiento queda bajo el rango, `CI` si queda sobre el rango, y `0` si está dentro o si es la primera carga del bus (no hay lectura anterior con qué comparar).
+6. Escribe el reporte en Excel con `KMACC` y `RENDIMIENTO` como **fórmulas**, para que quien corrija un odómetro a mano vea el recálculo, y con colores: rojo bajo el rango, amarillo sobre el rango, azul cuando no hay km para calcular.
 
-## Ejecución en terminal para instalar librerías de Python
-¿Qué es la terminal o CMD?
-La terminal (o CMD, "Command Prompt") es una herramienta de texto de tu computadora donde puedes dar instrucciones directamente al sistema operativo. Aquí es donde se instalan las librerías necesarias.
-Asegurar de tener Python instalado:
-•	Abre la terminal:
-En Windows: Presiona Win + R, escribe cmd y presiona Enter.
-Copia y pega el siguiente comando y presiona Enter:
-python --version
+## Errores encontrados al revisarlo
 
-Abre la terminal para instalar las librerías:
-•	En Windows, abre CMD como se describió antes.
-•	Copia y pega el siguiente comando y presiona Enter:
-pip install pandas openpyxl ipython ipywidgets notebook
+- **El orden por fecha estaba mal entre meses.** La fecha se convertía a texto `dd-mm-aaaa` antes de ordenar. Ordenado como texto, el `02-01-2025` queda antes que el `15-12-2024`, así que cuando las cargas cruzaban un cambio de mes, los km de cada carga se calculaban contra la lectura equivocada. Ahora se ordena con la fecha real y el formato de texto se aplica al final. El test `test_kmacc_respeta_el_orden_cronologico_entre_meses` reproduce el caso.
+- **La primera carga de cada bus salía marcada como `BR`.** Sin lectura anterior, `KMACC` vale 0, el rendimiento da 0 y caía bajo el rango. Ahora esa fila no se marca: el Excel ya la pinta azul como "sin dato".
 
-¿Qué hace este comando?
-•	pip: Es el instalador de Python. Le estás diciendo que descargue e instale librerías.
+## Cómo correrlo
 
-## Resumen de Beneficios
-•	Automatización: Limpia y consolida datos automáticamente.
-•	Interactividad: Ofrece una interfaz gráfica fácil de usar.
-•	Uniformidad: Estandariza formatos clave como horas y patentes.
-•	Flexibilidad: Permite procesar múltiples archivos simultáneamente.
+```bash
+pip install -r requirements.txt
+python generar_ejemplo.py   # planillas ficticias en entrada_rangos/ y entrada_consolidados/
+python main.py              # crea Salida/REPORTE_RENDIMIENTO.xlsx
+pytest -q                   # 3 tests
+```
 
-¿Qué es Kernel?
-Un kernel es el núcleo del entorno de ejecución en un Jupyter Notebook. Es responsable de:
-1.	Ejecutar el Código:
-o	El kernel interpreta las instrucciones escritas en las celdas (en este caso, Python) y devuelve los resultados.
-2.	Mantener el Estado:
-o	Recuerda variables, funciones y otros datos definidos mientras ejecutas el notebook, permitiendo que las celdas compartan información.
-3.	Manejar Librerías y Dependencias:
-o	El kernel utiliza el entorno de Python que configures, incluyendo las versiones de librerías instaladas.
+Con datos reales, se ponen `Rangos.xlsx` en `entrada_rangos/` y las planillas de cada terminal en `entrada_consolidados/`. Las tres carpetas y cualquier `.xlsx` quedan fuera de git (`.gitignore`), para no subir datos operativos por error.
 
-## Interacción Usuario con el Codigo
-Abrir y Ejecutar el Archivo .ipynb en Visual Studio
-1.	Abrir Visual Studio:
-o	Inicia Visual Studio y selecciona Abrir un Proyecto o Solución
-2.	Abrir el Archivo .ipynb:
-o	Navega hasta la ubicación de tu archivo Jupyter Notebook (“plantilla _interactiva_para_consolidar.ipynb”).
-o	Selecciónalo y haz clic en Abrir.
-3.	Interfaz de Jupyter en Visual Studio:
-o	Visual Studio detectará automáticamente que es un archivo Jupyter Notebook y lo abrirá en el Editor de Notebooks.
-o	Verás las celdas del archivo organizadas, con opciones para ejecutarlas individualmente o todas juntas.
-4.	Ejecutar el Código:
-o	Configura el kernel parte superior del editor de Jupyter Notebook, hay un menú desplegable llamado "Kernel" o similar. (asegúrate de seleccionar la versión correcta de Python instalada en tu sistema).
-o	Haz clic en Ejecutar todo o selecciona celda por celda y presiona Shift + Enter.
-o	
-5.	Interactuar con el Código
-Una vez que el archivo esté abierto y listo para ejecutarse:
-•	Subir Archivos Excel:
-o	Usa el widget “Upload” de carga de archivos para seleccionar y cargar los archivos .xlsx o .xlsm que deberían ser 20 a consolidar. ( “BCG1”,” CARLOS VALDOVINOS”,” DIEGO PORTALES”, “DUCAUD ”, “EL MAÑIO”, “GABRIELA”, “LAS PERDICES DIA”, “LAS PERDICES NOCHE”, “LAS TORRES”, “LLANQUIHUE”, “LO BLANCO”, “MARCOLETA DIA”, “MARCOLETA NOCHE”, “MICHIMALONCO”, “PLAZA OESTE”, “RENE OLIVARES”, “SAN JUAN”, “SANTA ANA”, “SANTA MARGARITA DIA”, “SANTA MARGARITA NOCHE”)
-•	Especificar Ruta de Guardado:
-o	Usa el widget “Ruta:” de texto para ingresar la carpeta donde se guardará el archivo consolidado.
-•	Procesar y Consolidar:
-o	Haz clic en el botón interactivo “Guardar archivo como...” que inicia el procesamiento y espera la confirmación en la salida.
-•	Revisar que se haya creado el archivo en la ruta especificada.
+**Columnas requeridas en cada planilla (hoja `B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
+
+**`Rangos.xlsx`:** hoja `detalle` (`PATENTE`, `N INTERNO`, `MODELO`, `NORMA`) y hoja `rango` (`MODELO`, `NORMA`, `RANGO_MIN`, `RANGO_MAX`).
+
+## Stack
+
+Python · pandas · openpyxl (fórmulas y formato condicional) · pytest · GitHub Actions
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE).
+
+## Autor
+
+**Pablo Reyes** — [github.com/Rxyxs](https://github.com/Rxyxs)
