@@ -1,60 +1,93 @@
-[ 🇨🇱 Español ] | [ 🇺🇸 [English](README.en.md) ]
+**Español** · [English](README.en.md)
 
-# Consolidación de rendimiento de combustible para una flota de buses
+# Control de combustible para una flota de buses
 
 [![tests](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml)
 
-Herramienta que hice en un trabajo para una empresa de buses. Cada terminal registraba las cargas de combustible en su propia planilla Excel. Este script une todas esas planillas en un solo reporte, calcula el rendimiento (km por litro) de cada carga y marca las que quedan fuera del rango esperado para el modelo y la norma de emisiones de cada bus.
+Trabajo real para una empresa de buses con 17 terminales. El combustible se controlaba con planillas Excel que llenaba cada terminal por separado: nadie podía ver el rendimiento de la flota completa ni cuadrar lo que salía de los estanques con lo que se cargaba a los buses. El trabajo tuvo dos etapas:
 
-El repositorio no trae datos de la empresa. `generar_ejemplo.py` crea planillas ficticias con la misma estructura para poder correrlo.
+1. **Consolidación y rendimiento (Python).** Un script que une las planillas de todos los terminales, calcula el rendimiento de cada carga (km por litro) y marca las que quedan fuera del rango de su modelo y norma. Es `main.py`.
+2. **App de captura (AppSheet).** Una aplicación móvil que reemplazó las planillas: el operador registra cada carga, las lecturas de las pistolas y el stock de los estanques, y la app calcula consumos, stock teórico, AdBlue, KMACC y REV. La app vive en AppSheet con los datos de la empresa y no está en este repositorio; `control_estanques.py` reimplementa su lógica de estanques en Python para poder probarla.
 
-## El problema
+El repositorio no trae datos de la empresa. `generar_ejemplo.py` crea datos ficticios con la misma estructura.
 
-- **Muchas planillas, un solo análisis.** Cada terminal tenía su propio archivo, con la hoja `B.D`. Para revisar el rendimiento de la flota había que juntarlos a mano.
-- **Datos digitados a mano.** Las horas venían como `830`, `8:30`, `22.40` o `23:05:00`, y las patentes con espacios y minúsculas distintas.
-- **El rendimiento depende de la lectura anterior.** Los km recorridos de una carga son el odómetro actual menos el de la carga anterior **del mismo bus**, que puede haber cargado en otro terminal. Por eso hay que ordenar todas las cargas juntas, por patente, fecha y hora.
-- **Cada bus tiene su propio rango normal.** El rendimiento esperado depende del modelo y de la norma (Euro 5, Euro 6…), que vienen en un archivo de rangos aparte.
-
-## Qué hace
+## Etapa 1: consolidación y rendimiento
 
 ```
 entrada_consolidados/*.xlsx  ─┐
   (una planilla por terminal) │   limpiar horas y patentes
                               ├─► ordenar por patente, fecha y hora ─► KMACC y rendimiento ─► Salida/REPORTE_RENDIMIENTO.xlsx
 entrada_rangos/Rangos.xlsx   ─┘   cruzar con el rango de su modelo y norma                       (fórmulas vivas y colores)
-  (hojas "detalle" y "rango")
 ```
 
-1. Lee todas las planillas de `entrada_consolidados/` y deja fuera, con un aviso, las que no traen las 13 columnas requeridas.
-2. Deja las horas en `HH:MM` y las patentes en mayúsculas sin espacios.
-3. Ordena por patente, fecha real y hora, y calcula `KMACC` (km desde la carga anterior del mismo bus) y `RENDIMIENTO` (`KMACC / LITROS`).
-4. Cruza cada bus con su rango (`DESDE`–`HASTA`) según su modelo y norma.
-5. Marca la columna `REV`: `BR` si el rendimiento queda bajo el rango, `CI` si queda sobre el rango, y `0` si está dentro o si es la primera carga del bus (no hay lectura anterior con qué comparar).
-6. Escribe el reporte en Excel con `KMACC` y `RENDIMIENTO` como **fórmulas**, para que quien corrija un odómetro a mano vea el recálculo, y con colores: rojo bajo el rango, amarillo sobre el rango, azul cuando no hay km para calcular.
+- **Muchas planillas, un análisis.** Lee todas las de `entrada_consolidados/` y deja fuera, con un aviso, las que no traen las 13 columnas requeridas.
+- **Datos digitados a mano.** Las horas venían como `830`, `8:30`, `22.40` o `23:05:00`; quedan en `HH:MM`. Las patentes, en mayúsculas y sin espacios.
+- **El rendimiento depende de la carga anterior del mismo bus**, que puede haber sido en otro terminal. Por eso se ordenan todas las cargas juntas y se calcula `KMACC` (km desde la carga anterior) y `RENDIMIENTO` (`KMACC / LITROS`).
+- **Cada modelo tiene su rango normal** (por ejemplo, 1,5–2,2 km/L para un modelo y 1,9–3,8 para otro). La columna `REV` marca `BR` bajo el rango y `CI` sobre él.
+- **El reporte es un Excel con fórmulas vivas**: si alguien corrige un odómetro a mano, `KMACC` y `RENDIMIENTO` se recalculan. Rojo bajo el rango, amarillo sobre el rango, azul cuando no hay km para calcular.
 
-## Errores encontrados al revisarlo
+## Etapa 2: la app de captura en AppSheet
 
-- **El orden por fecha estaba mal entre meses.** La fecha se convertía a texto `dd-mm-aaaa` antes de ordenar. Ordenado como texto, el `02-01-2025` queda antes que el `15-12-2024`, así que cuando las cargas cruzaban un cambio de mes, los km de cada carga se calculaban contra la lectura equivocada. Ahora se ordena con la fecha real y el formato de texto se aplica al final. El test `test_kmacc_respeta_el_orden_cronologico_entre_meses` reproduce el caso.
-- **La primera carga de cada bus salía marcada como `BR`.** Sin lectura anterior, `KMACC` vale 0, el rendimiento da 0 y caía bajo el rango. Ahora esa fila no se marca: el Excel ya la pinta azul como "sin dato".
+La app reemplazó el registro en planillas por formularios en el celular, con validaciones y cálculos automáticos.
+
+| Parte | Qué hace |
+|---|---|
+| **Formulario de buses** | El operador ingresa el número interno y la app trae la patente sola; luego registra kilometraje y litros. Evita digitar dos veces lo que ya está en la base y que un bus quede con datos inconsistentes. |
+| **Formulario de camionetas** | Flujo distinto, porque las camionetas se identifican por patente y no por número interno. |
+| **Lógica condicional** | El formulario muestra solo los campos que corresponden según el tipo de vehículo y de registro. |
+| **Estanques** | Una lectura inicial y una final por turno: pistolas, AdBlue y stock medido. |
+| **Pistolas** | `TOTAL N 1 = PISTOLA 1 FINAL − PISTOLA 1 INICIAL` (lo mismo para la pistola 2). |
+| **Stock teórico** | `STOCK INICIAL + RECEPCIONES − CONSUMO`, para compararlo con la medición física. |
+| **AdBlue** | `ADBLUE FINAL − ADBLUE INICIAL`. |
+| **Indicadores** | Rendimiento, KMACC y REV calculados desde lo registrado, sin pasar por una planilla aparte. |
+
+**El error que hubo que corregir en la app:** al principio, la búsqueda de la lectura inicial de un turno podía traer la de **otro** turno. El resultado eran consumos negativos, consumos enormes y stocks teóricos sin sentido. Se corrigió amarrando la lectura inicial y la final por **folio, terminal y fecha** a la vez.
+
+### `control_estanques.py`: la misma lógica, con tests
+
+```
+entrada_estanques/Estanques.xlsx  ─►  emparejar INICIAL y FINAL  ─►  TOTAL N, AdBlue,  ─►  Salida/CONTROL_ESTANQUES.xlsx
+  (hojas "lecturas" y "recepciones")    por terminal, fecha y folio     stock teórico, diferencia
+```
+
+- Empareja cada turno solo por **terminal + fecha + folio**, como la app ya corregida. Los turnos sin lectura inicial o final, o con dos lecturas del mismo tipo, no se calculan: se listan aparte.
+- Calcula `TOTAL N 1`, `TOTAL N 2`, `TOTAL ADBLUE`, el stock teórico y la **diferencia** contra lo medido en el estanque.
+- Alerta los turnos con un total negativo o un consumo imposible para un turno, que son las huellas de un cruce equivocado o de un dígito de más.
+
+## Errores encontrados al revisar el código
+
+- **El orden por fecha estaba mal entre meses.** La fecha se pasaba a texto `dd-mm-aaaa` antes de ordenar, y como texto el `02-01-2025` queda antes que el `15-12-2024`. Cuando las cargas cruzaban un cambio de mes, los km se calculaban contra la lectura equivocada. Ahora se ordena con la fecha real.
+- **Buses sin rango por cómo estaba escrita la norma.** En la planilla real de rangos, la misma norma aparece como `Euro V` y `EURO V`, o `Euro III Plus` y `EURO III PLUS`. El cruce exacto dejaba esos buses sin rango y `REV` nunca los marcaba: el reporte decía "todo bien" justo en los datos mal escritos. Ahora modelo y norma se normalizan antes del cruce, y los buses que igual quedan sin rango se avisan por pantalla (por ejemplo, una norma escrita como `O 500 EURO ELEC`, con el modelo metido adentro).
+- **La primera carga de cada bus salía marcada `BR`.** Sin carga anterior, `KMACC` vale 0 y el rendimiento también. Ahora esa fila no se marca.
+
+Cada uno tiene un test que lo reproduce.
 
 ## Cómo correrlo
 
 ```bash
 pip install -r requirements.txt
-python generar_ejemplo.py   # planillas ficticias en entrada_rangos/ y entrada_consolidados/
-python main.py              # crea Salida/REPORTE_RENDIMIENTO.xlsx
-pytest -q                   # 3 tests
+python generar_ejemplo.py     # datos ficticios en entrada_rangos/, entrada_consolidados/ y entrada_estanques/
+python main.py                # Salida/REPORTE_RENDIMIENTO.xlsx
+python control_estanques.py   # Salida/CONTROL_ESTANQUES.xlsx
+pytest -q                     # 9 tests
 ```
 
-Con datos reales, se ponen `Rangos.xlsx` en `entrada_rangos/` y las planillas de cada terminal en `entrada_consolidados/`. Las tres carpetas y cualquier `.xlsx` quedan fuera de git (`.gitignore`), para no subir datos operativos por error.
+Con datos reales, los archivos van en las mismas carpetas. Todas las carpetas de entrada y salida, y cualquier `.xlsx`, quedan fuera de git para no subir datos operativos por error.
 
-**Columnas requeridas en cada planilla (hoja `B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
+<details>
+<summary>Formato de los archivos de entrada</summary>
+
+**Planillas de cada terminal (hoja `B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
 
 **`Rangos.xlsx`:** hoja `detalle` (`PATENTE`, `N INTERNO`, `MODELO`, `NORMA`) y hoja `rango` (`MODELO`, `NORMA`, `RANGO_MIN`, `RANGO_MAX`).
 
+**`Estanques.xlsx`:** hoja `lecturas` (`TERMINAL`, `FECHA`, `FOLIO`, `TIPO` = INICIAL o FINAL, `PISTOLA 1`, `PISTOLA 2`, `ADBLUE`, `STOCK`) y hoja `recepciones` (`TERMINAL`, `FECHA`, `FOLIO`, `LITROS`).
+
+</details>
+
 ## Stack
 
-Python · pandas · openpyxl (fórmulas y formato condicional) · pytest · GitHub Actions
+Python · pandas · openpyxl (fórmulas y formato condicional) · pytest · GitHub Actions · AppSheet
 
 ## Licencia
 

@@ -53,3 +53,38 @@ def test_rev_marca_bajo_y_sobre_rango():
     ])
     out = main.procesar_datos(df, _rangos())
     assert list(out["REV"]) == [0, "BR", "CI"]
+
+
+def test_rango_se_encuentra_aunque_la_norma_venga_escrita_distinto(tmp_path, monkeypatch):
+    # En la planilla real de rangos la misma norma aparece como "Euro V" y "EURO V",
+    # "Euro III Plus" y "EURO III PLUS". Un cruce exacto deja esos buses sin rango y REV
+    # nunca los marca.
+    entrada = tmp_path / "entrada_rangos"
+    entrada.mkdir()
+    detalle = pd.DataFrame({"PATENTE": ["ABCD12", "EFGH34"], "N INTERNO": ["101", "102"],
+                            "MODELO": ["O 500", "O 500 "], "NORMA": ["EURO V", "Euro  III Plus"]})
+    rango = pd.DataFrame({"MODELO": ["O 500", "O 500"], "NORMA": ["Euro V", "EURO III PLUS"],
+                          "RANGO_MIN": [1.5, 1.5], "RANGO_MAX": [2.2, 2.2]})
+    with pd.ExcelWriter(entrada / "Rangos.xlsx") as w:
+        detalle.to_excel(w, sheet_name="detalle", index=False)
+        rango.to_excel(w, sheet_name="rango", index=False)
+    monkeypatch.setattr(main, "DIR_RANGOS", str(entrada))
+    rangos = main.cargar_rangos()
+    assert rangos["DESDE"].tolist() == [1.5, 1.5]
+    assert rangos["HASTA"].tolist() == [2.2, 2.2]
+
+
+def test_avisa_los_buses_que_quedan_sin_rango(tmp_path, monkeypatch, capsys):
+    entrada = tmp_path / "entrada_rangos"
+    entrada.mkdir()
+    detalle = pd.DataFrame({"PATENTE": ["ABCD12"], "N INTERNO": ["101"],
+                            "MODELO": ["O 500"], "NORMA": ["O 500 EURO ELEC"]})
+    rango = pd.DataFrame({"MODELO": ["O 500"], "NORMA": ["Euro III Elec"],
+                          "RANGO_MIN": [1.5], "RANGO_MAX": [2.2]})
+    with pd.ExcelWriter(entrada / "Rangos.xlsx") as w:
+        detalle.to_excel(w, sheet_name="detalle", index=False)
+        rango.to_excel(w, sheet_name="rango", index=False)
+    monkeypatch.setattr(main, "DIR_RANGOS", str(entrada))
+    main.cargar_rangos()
+    salida = capsys.readouterr().out
+    assert "sin rango" in salida and "101" in salida and "O 500 EURO ELEC" in salida

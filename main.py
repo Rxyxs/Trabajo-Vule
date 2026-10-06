@@ -46,6 +46,11 @@ def limpiar_hora(valor):
     return valor
 
 
+def normalizar_texto(serie):
+    """Mayusculas, sin espacios al borde y con un solo espacio entre palabras."""
+    return serie.astype(str).str.upper().str.split().str.join(' ')
+
+
 def cargar_rangos():
     """Carga y une las hojas 'detalle' y 'rango' del archivo Rangos.xlsx."""
     detalle_path = os.path.join(DIR_RANGOS, "Rangos.xlsx")
@@ -75,6 +80,13 @@ def cargar_rangos():
         if "NORMA" not in df_rango.columns:
             raise ValueError("La hoja 'rango' debe contener la columna 'NORMA'.")
 
+        # La misma norma viene escrita de varias formas ("Euro V" / "EURO V",
+        # "Euro III Plus" / "EURO III PLUS"): sin normalizar, el cruce exacto deja
+        # esos buses sin rango y REV nunca los marca.
+        for df in (df_detalle, df_rango):
+            for col in ('MODELO', 'NORMA'):
+                df[col] = normalizar_texto(df[col])
+
         # Merge por MODELO y NORMA
         df_merge = pd.merge(
             df_detalle,
@@ -84,6 +96,12 @@ def cargar_rangos():
         )
 
         rangos_df = df_merge.drop_duplicates()
+        sin_rango = rangos_df[rangos_df['DESDE'].isna() | rangos_df['HASTA'].isna()]
+        if len(sin_rango):
+            print(f"[ADVERTENCIA] {len(sin_rango)} buses sin rango para su MODELO + NORMA "
+                  "(no se les podra marcar BR/CI):")
+            for _, fila in sin_rango.iterrows():
+                print(f"    N interno {fila['N INTERNO']} | {fila['MODELO']} | {fila['NORMA']}")
         print("[OK] Rangos integrados correctamente desde 'detalle' + 'rango'")
         return rangos_df
 

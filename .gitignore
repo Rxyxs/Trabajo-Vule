@@ -7,5 +7,6 @@ __pycache__/
 entrada_rangos/
 entrada_consolidados/
 Salida/
+entrada_estanques/
 *.xlsx
 *.xlsm

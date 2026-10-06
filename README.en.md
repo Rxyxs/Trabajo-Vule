@@ -1,60 +1,93 @@
-[ 🇨🇱 [Español](README.md) ] | [ 🇺🇸 English ]
+[Español](README.md) · **English**
 
-# Fuel-efficiency consolidation for a bus fleet
+# Fuel control for a bus fleet
 
 [![tests](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml)
 
-A tool I built on the job for a bus company. Each depot logged its fuel loads in its own Excel sheet. This script merges all of those sheets into one report, computes the fuel efficiency (km per litre) of every load, and flags the loads that fall outside the expected range for each bus's model and emissions standard.
+Real work for a bus company with 17 depots. Fuel was tracked in Excel sheets that each depot filled in separately: nobody could see the whole fleet's efficiency or reconcile what left the tanks with what went into the buses. The work had two stages:
 
-The repository contains none of the company's data. `generar_ejemplo.py` creates fictitious sheets with the same structure so it can be run.
+1. **Consolidation and efficiency (Python).** A script that merges every depot's sheets, computes each load's efficiency (km per litre) and flags the ones outside the range for the bus's model and emissions standard. That is `main.py`.
+2. **Data-capture app (AppSheet).** A mobile app that replaced the sheets: the operator records each load, the pump readings and the tank stock, and the app computes consumption, theoretical stock, AdBlue, KMACC and REV. The app lives in AppSheet with the company's data and is not in this repository; `control_estanques.py` reimplements its tank logic in Python so it can be tested.
 
-## The problem
+The repository contains none of the company's data. `generar_ejemplo.py` creates fictitious data with the same structure.
 
-- **Many sheets, one analysis.** Every depot had its own file, with a `B.D` sheet. Reviewing fleet efficiency meant combining them by hand.
-- **Hand-typed data.** Times came in as `830`, `8:30`, `22.40` or `23:05:00`, and licence plates with stray spaces and mixed case.
-- **Efficiency depends on the previous reading.** The km driven for a load is the current odometer minus the one at the previous load **of the same bus**, which may have refuelled at another depot. So all loads have to be sorted together, by plate, date and time.
-- **Every bus has its own normal range.** Expected efficiency depends on the model and the emissions standard (Euro 5, Euro 6…), which come in a separate ranges file.
-
-## What it does
+## Stage 1: consolidation and efficiency
 
 ```
 entrada_consolidados/*.xlsx  ─┐
   (one sheet per depot)       │   clean times and plates
                               ├─► sort by plate, date and time ─► KMACC and efficiency ─► Salida/REPORTE_RENDIMIENTO.xlsx
-entrada_rangos/Rangos.xlsx   ─┘   join with the range for its model and standard                 (live formulas and colours)
-  ("detalle" and "rango" sheets)
+entrada_rangos/Rangos.xlsx   ─┘   join with the range for its model and standard          (live formulas and colours)
 ```
 
-1. Reads every sheet in `entrada_consolidados/` and skips, with a warning, any that lacks the 13 required columns.
-2. Normalizes times to `HH:MM` and plates to upper case with no spaces.
-3. Sorts by plate, actual date and time, and computes `KMACC` (km since the same bus's previous load) and `RENDIMIENTO` (`KMACC / LITROS`).
-4. Joins each bus with its range (`DESDE`–`HASTA`) by model and standard.
-5. Fills the `REV` column: `BR` when efficiency is below the range, `CI` when it is above, and `0` when it is within range or is the bus's first load (no previous reading to compare against).
-6. Writes the Excel report with `KMACC` and `RENDIMIENTO` as **formulas**, so anyone who corrects an odometer by hand sees it recalculate, and colour-coded: red below range, yellow above range, blue when there are no km to compute.
+- **Many sheets, one analysis.** Reads everything in `entrada_consolidados/` and skips, with a warning, any sheet missing the 13 required columns.
+- **Hand-typed data.** Times came in as `830`, `8:30`, `22.40` or `23:05:00`; they end up as `HH:MM`. Plates, upper case with no spaces.
+- **Efficiency depends on the same bus's previous load**, which may have been at another depot. So all loads are sorted together to compute `KMACC` (km since the previous load) and `RENDIMIENTO` (`KMACC / LITROS`).
+- **Each model has its own normal range** (for example 1.5–2.2 km/L for one model and 1.9–3.8 for another). The `REV` column marks `BR` below the range and `CI` above it.
+- **The report is an Excel file with live formulas**: if someone fixes an odometer by hand, `KMACC` and `RENDIMIENTO` recalculate. Red below range, yellow above range, blue when there are no km to compute.
 
-## Bugs found while reviewing it
+## Stage 2: the AppSheet capture app
 
-- **Date sorting was wrong across months.** The date was turned into `dd-mm-yyyy` text before sorting. Sorted as text, `02-01-2025` comes before `15-12-2024`, so whenever loads crossed a month boundary each load's km were computed against the wrong reading. It now sorts on the real date and formats the text at the end. The test `test_kmacc_respeta_el_orden_cronologico_entre_meses` reproduces the case.
-- **Every bus's first load was flagged `BR`.** With no previous reading, `KMACC` is 0, efficiency is 0 and it fell below the range. That row is no longer flagged: the Excel report already colours it blue as "no data".
+The app replaced sheet entry with phone forms, with validations and automatic calculations.
+
+| Part | What it does |
+|---|---|
+| **Bus form** | The operator enters the bus's internal number and the app fills in the plate; then they record mileage and litres. No retyping what is already in the database, and no bus with inconsistent data. |
+| **Pickup-truck form** | A different flow, because pickups are identified by plate rather than internal number. |
+| **Conditional logic** | The form shows only the fields that apply to the vehicle and record type. |
+| **Tanks** | One opening and one closing reading per shift: pumps, AdBlue and measured stock. |
+| **Pumps** | `TOTAL N 1 = PUMP 1 CLOSING − PUMP 1 OPENING` (same for pump 2). |
+| **Theoretical stock** | `OPENING STOCK + DELIVERIES − CONSUMPTION`, to compare with the physical measurement. |
+| **AdBlue** | `ADBLUE CLOSING − ADBLUE OPENING`. |
+| **Indicators** | Efficiency, KMACC and REV computed from what was recorded, without a separate spreadsheet. |
+
+**The bug that had to be fixed in the app:** at first, looking up a shift's opening reading could return **another** shift's. The result was negative consumption, huge consumption and meaningless theoretical stock. It was fixed by tying the opening and closing readings together by **folio, depot and date** at once.
+
+### `control_estanques.py`: the same logic, with tests
+
+```
+entrada_estanques/Estanques.xlsx  ─►  pair OPENING and CLOSING  ─►  TOTAL N, AdBlue,      ─►  Salida/CONTROL_ESTANQUES.xlsx
+  ("lecturas" and "recepciones")       by depot, date and folio       theoretical stock, gap
+```
+
+- Pairs each shift only by **depot + date + folio**, like the fixed app. Shifts missing an opening or closing reading, or with two readings of the same type, are not computed: they are listed separately.
+- Computes `TOTAL N 1`, `TOTAL N 2`, `TOTAL ADBLUE`, theoretical stock and the **gap** against the measured tank level.
+- Flags shifts with a negative total or a consumption impossible for one shift, the fingerprints of a wrong pairing or an extra digit.
+
+## Bugs found while reviewing the code
+
+- **Date sorting was wrong across months.** The date was turned into `dd-mm-yyyy` text before sorting, and as text `02-01-2025` comes before `15-12-2024`. Whenever loads crossed a month boundary, km were computed against the wrong reading. It now sorts on the real date.
+- **Buses with no range because of how the standard was written.** In the real ranges sheet, the same standard appears as `Euro V` and `EURO V`, or `Euro III Plus` and `EURO III PLUS`. The exact join left those buses without a range, so `REV` never flagged them: the report said "all fine" precisely where the data was miswritten. Model and standard are now normalized before the join, and any bus still left without a range is reported on screen (for example, a standard written as `O 500 EURO ELEC`, with the model inside it).
+- **Every bus's first load was flagged `BR`.** With no previous load, `KMACC` is 0 and so is efficiency. That row is no longer flagged.
+
+Each one has a test that reproduces it.
 
 ## How to run it
 
 ```bash
 pip install -r requirements.txt
-python generar_ejemplo.py   # fictitious sheets in entrada_rangos/ and entrada_consolidados/
-python main.py              # creates Salida/REPORTE_RENDIMIENTO.xlsx
-pytest -q                   # 3 tests
+python generar_ejemplo.py     # fictitious data in entrada_rangos/, entrada_consolidados/ and entrada_estanques/
+python main.py                # Salida/REPORTE_RENDIMIENTO.xlsx
+python control_estanques.py   # Salida/CONTROL_ESTANQUES.xlsx
+pytest -q                     # 9 tests
 ```
 
-With real data, put `Rangos.xlsx` in `entrada_rangos/` and each depot's sheet in `entrada_consolidados/`. All three folders and any `.xlsx` file are git-ignored, so operational data can't be committed by mistake.
+With real data, the files go in the same folders. Every input and output folder, and any `.xlsx`, is git-ignored so operational data can't be committed by mistake.
 
-**Required columns in each sheet (`B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
+<details>
+<summary>Input file formats</summary>
+
+**Each depot's sheet (`B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
 
 **`Rangos.xlsx`:** a `detalle` sheet (`PATENTE`, `N INTERNO`, `MODELO`, `NORMA`) and a `rango` sheet (`MODELO`, `NORMA`, `RANGO_MIN`, `RANGO_MAX`).
 
+**`Estanques.xlsx`:** a `lecturas` sheet (`TERMINAL`, `FECHA`, `FOLIO`, `TIPO` = INICIAL or FINAL, `PISTOLA 1`, `PISTOLA 2`, `ADBLUE`, `STOCK`) and a `recepciones` sheet (`TERMINAL`, `FECHA`, `FOLIO`, `LITROS`).
+
+</details>
+
 ## Stack
 
-Python · pandas · openpyxl (formulas and conditional formatting) · pytest · GitHub Actions
+Python · pandas · openpyxl (formulas and conditional formatting) · pytest · GitHub Actions · AppSheet
 
 ## License
 
