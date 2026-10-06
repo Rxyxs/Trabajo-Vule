@@ -2,7 +2,7 @@
 
 # Consolidación de rendimiento de combustible para una flota de buses
 
-[![tests](https://github.com/Rxyxs/Trabajo-Vule/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/Trabajo-Vule/actions/workflows/tests.yml)
+[![tests](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml)
 
 Herramienta que hice en un trabajo para una empresa de buses. Cada terminal registraba las cargas de combustible en su propia planilla Excel. Este script une todas esas planillas en un solo reporte, calcula el rendimiento (km por litro) de cada carga y marca las que quedan fuera del rango esperado para el modelo y la norma de emisiones de cada bus.
 

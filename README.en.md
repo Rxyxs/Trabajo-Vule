@@ -2,7 +2,7 @@
 
 # Fuel-efficiency consolidation for a bus fleet
 
-[![tests](https://github.com/Rxyxs/Trabajo-Vule/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/Trabajo-Vule/actions/workflows/tests.yml)
+[![tests](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml/badge.svg)](https://github.com/Rxyxs/bus-fleet-fuel-efficiency/actions/workflows/tests.yml)
 
 A tool I built on the job for a bus company. Each depot logged its fuel loads in its own Excel sheet. This script merges all of those sheets into one report, computes the fuel efficiency (km per litre) of every load, and flags the loads that fall outside the expected range for each bus's model and emissions standard.
 
