@@ -6,7 +6,7 @@
 
 Trabajo real para una empresa de buses con 17 terminales. El combustible se controlaba con planillas Excel que llenaba cada terminal por separado: nadie podía ver el rendimiento de la flota completa ni cuadrar lo que salía de los estanques con lo que se cargaba a los buses. El trabajo tuvo dos etapas:
 
-1. **Consolidación y rendimiento (Python).** Un script que une las planillas de todos los terminales, calcula el rendimiento de cada carga (km por litro) y marca las que quedan fuera del rango de su modelo y norma. Es `main.py`.
+1. **Consolidación y rendimiento (Python).** Une las planillas de todos los terminales en un consolidado diario (`consolidar_planillas.py`), calcula el rendimiento de cada carga en km por litro y marca las que quedan fuera del rango de su modelo y norma (`main.py`). Empezó como una macro VBA y luego notebooks de Jupyter que procesaban un archivo a la vez; quedó en scripts que procesan una carpeta completa.
 2. **App de captura (AppSheet).** Una aplicación móvil que reemplazó las planillas: el operador registra cada carga, las lecturas de las pistolas y el stock de los estanques, y la app calcula consumos, stock teórico, AdBlue, KMACC y REV. La app vive en AppSheet con los datos de la empresa y no está en este repositorio; `control_estanques.py` reimplementa su lógica de estanques en Python para poder probarla.
 
 El repositorio no trae datos de la empresa. `generar_ejemplo.py` crea datos ficticios con la misma estructura.
@@ -14,13 +14,13 @@ El repositorio no trae datos de la empresa. `generar_ejemplo.py` crea datos fict
 ## Etapa 1: consolidación y rendimiento
 
 ```
-entrada_consolidados/*.xlsx  ─┐
-  (una planilla por terminal) │   limpiar horas y patentes
-                              ├─► ordenar por patente, fecha y hora ─► KMACC y rendimiento ─► Salida/REPORTE_RENDIMIENTO.xlsx
-entrada_rangos/Rangos.xlsx   ─┘   cruzar con el rango de su modelo y norma                       (fórmulas vivas y colores)
+entrada_planillas/*.xlsm ─► consolidar_planillas.py ─► entrada_consolidados/AAAA-MM-DD.xlsx ─┐
+  (una por terminal y día)    un archivo por día,        (todas las sedes)                    ├─► main.py ─► Salida/REPORTE_RENDIMIENTO.xlsx
+                              todas las sedes            entrada_rangos/Rangos.xlsx ──────────┘             (fórmulas vivas y colores)
 ```
 
-- **Muchas planillas, un análisis.** Lee todas las de `entrada_consolidados/` y deja fuera, con un aviso, las que no traen las 13 columnas requeridas.
+- **Planillas pensadas para imprimir, no para analizar.** Cada terminal llena un `.xlsm` con 15 filas de encabezado decorativo, columnas de checklist que no se usan y filas vacías con formato hasta el final. `consolidar_planillas.py` lee la tabla real, la limpia y escribe un consolidado por día con todas las sedes; deja fuera, con un aviso, las planillas a las que les faltan columnas.
+- **La fecha la manda el nombre del archivo.** Cada planilla es de un día. Si la fecha digitada adentro no coincide con la del nombre, el consolidado va al día correcto y se avisa, porque esa fecha mal escrita también desordena el cálculo de km.
 - **Datos digitados a mano.** Las horas venían como `830`, `8:30`, `22.40` o `23:05:00`; quedan en `HH:MM`. Las patentes, en mayúsculas y sin espacios.
 - **El rendimiento depende de la carga anterior del mismo bus**, que puede haber sido en otro terminal. Por eso se ordenan todas las cargas juntas y se calcula `KMACC` (km desde la carga anterior) y `RENDIMIENTO` (`KMACC / LITROS`).
 - **Cada modelo tiene su rango normal** (por ejemplo, 1,5–2,2 km/L para un modelo y 1,9–3,8 para otro). La columna `REV` marca `BR` bajo el rango y `CI` sobre él.
@@ -54,6 +54,13 @@ entrada_estanques/Estanques.xlsx  ─►  emparejar INICIAL y FINAL  ─►  TOT
 - Calcula `TOTAL N 1`, `TOTAL N 2`, `TOTAL ADBLUE`, el stock teórico y la **diferencia** contra lo medido en el estanque.
 - Alerta los turnos con un total negativo o un consumo imposible para un turno, que son las huellas de un cruce equivocado o de un dígito de más.
 
+## Probado con planillas reales
+
+El repositorio solo trae datos ficticios, pero el flujo se probó en local con 26 planillas reales de dos días (1.754 cargas de 17 terminales). Esa prueba encontró dos problemas de datos que los datos ficticios no tenían y que hoy el código maneja:
+
+- **Una planilla completa con el mes mal digitado** (noviembre en vez de diciembre, en las dos columnas de fecha). Esas cargas se ordenaban un mes antes y producían **28 kilometrajes negativos**: el odómetro parecía retroceder.
+- **Filas que solo tenían la numeración** al final o al comienzo de la tabla, que se colaban como cargas vacías.
+
 ## Errores encontrados al revisar el código
 
 - **El orden por fecha estaba mal entre meses.** La fecha se pasaba a texto `dd-mm-aaaa` antes de ordenar, y como texto el `02-01-2025` queda antes que el `15-12-2024`. Cuando las cargas cruzaban un cambio de mes, los km se calculaban contra la lectura equivocada. Ahora se ordena con la fecha real.
@@ -66,10 +73,11 @@ Cada uno tiene un test que lo reproduce.
 
 ```bash
 pip install -r requirements.txt
-python generar_ejemplo.py     # datos ficticios en entrada_rangos/, entrada_consolidados/ y entrada_estanques/
-python main.py                # Salida/REPORTE_RENDIMIENTO.xlsx
-python control_estanques.py   # Salida/CONTROL_ESTANQUES.xlsx
-pytest -q                     # 9 tests
+python generar_ejemplo.py       # datos ficticios en entrada_planillas/, entrada_rangos/ y entrada_estanques/
+python consolidar_planillas.py  # entrada_consolidados/AAAA-MM-DD.xlsx
+python main.py                  # Salida/REPORTE_RENDIMIENTO.xlsx
+python control_estanques.py     # Salida/CONTROL_ESTANQUES.xlsx
+pytest -q                       # 13 tests
 ```
 
 Con datos reales, los archivos van en las mismas carpetas. Todas las carpetas de entrada y salida, y cualquier `.xlsx`, quedan fuera de git para no subir datos operativos por error.
@@ -77,7 +85,7 @@ Con datos reales, los archivos van en las mismas carpetas. Todas las carpetas de
 <details>
 <summary>Formato de los archivos de entrada</summary>
 
-**Planillas de cada terminal (hoja `B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
+**Planillas de cada terminal:** hoja `Carga` con el encabezado en la fila 16 (la de `KILOMETROS`). **Consolidado diario (hoja `B.D`, lo escribe `consolidar_planillas.py`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
 
 **`Rangos.xlsx`:** hoja `detalle` (`PATENTE`, `N INTERNO`, `MODELO`, `NORMA`) y hoja `rango` (`MODELO`, `NORMA`, `RANGO_MIN`, `RANGO_MAX`).
 

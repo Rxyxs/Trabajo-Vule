@@ -13,6 +13,7 @@ import os
 import numpy as np
 import pandas as pd
 
+import consolidar_planillas
 import control_estanques
 import main
 
@@ -52,12 +53,33 @@ def generar(seed=7):
                 "HORA": str(rng.choice(["630", "7:15", "22.40", "23:05:00"])),
                 "BOMBERO": "OPERADOR", "TURNO": "DIA", "AD BLUE": 0,
             })
-    for terminal, filas in planillas.items():
-        nombre = terminal.replace(" ", "_") + ".xlsx"
-        pd.DataFrame(filas).to_excel(os.path.join(main.DIR_CONSOLIDADOS, nombre),
-                                     sheet_name="B.D", index=False)
+    escribir_planillas(planillas)
 
     generar_estanques(planillas, rng)
+
+
+def escribir_planillas(planillas):
+    """Una planilla por terminal y dia, con el formato de las reales: hoja "Carga", 15 filas
+    de encabezado decorativo, el odometro como KILOMETROS y columnas que no se usan.
+
+    Una de ellas trae el mes mal digitado (noviembre en vez de diciembre), como paso con
+    una planilla real, para que consolidar_planillas.py muestre el aviso.
+    """
+    os.makedirs(consolidar_planillas.DIR_PLANILLAS, exist_ok=True)
+    portada = pd.DataFrame([["PLANILLA DE CARGA DE COMBUSTIBLE"]] + [[None]] * 14)
+    for terminal, filas in planillas.items():
+        df = pd.DataFrame(filas).rename(columns={"ODOMETRO": "KILOMETROS"})
+        for i, (fecha, dia) in enumerate(df.groupby("FECHA PLANILLA")):
+            dia = dia.copy()
+            if terminal == "TERMINAL NORTE" and i == 3:  # la cuarta planilla del terminal
+                for col in ("FECHA PLANILLA", "FECHA REAL"):
+                    dia[col] = dia[col] - pd.DateOffset(months=1)
+            dia.insert(0, "N°", range(1, len(dia) + 1))
+            dia["REJILLA"], dia["TAPA"] = "OK", "OK"
+            ruta = os.path.join(consolidar_planillas.DIR_PLANILLAS, f"{terminal} - {fecha:%d-%m-%Y}.xlsx")
+            with pd.ExcelWriter(ruta) as w:
+                portada.to_excel(w, sheet_name="Carga", header=False, index=False)
+                dia.to_excel(w, sheet_name="Carga", startrow=consolidar_planillas.FILA_ENCABEZADO, index=False)
 
 
 def generar_estanques(planillas, rng):
@@ -95,4 +117,4 @@ def generar_estanques(planillas, rng):
 
 if __name__ == "__main__":
     generar()
-    print("[OK] Archivos de ejemplo creados en entrada_rangos/, entrada_consolidados/ y entrada_estanques/")
+    print("[OK] Archivos de ejemplo creados en entrada_planillas/, entrada_rangos/ y entrada_estanques/")

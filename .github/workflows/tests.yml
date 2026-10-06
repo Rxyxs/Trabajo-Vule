@@ -55,6 +55,7 @@ jobs:
       - name: End-to-end run on fictitious data
         run: |
           python generar_ejemplo.py
+          python consolidar_planillas.py
           python main.py
           python control_estanques.py
           test -f Salida/REPORTE_RENDIMIENTO.xlsx

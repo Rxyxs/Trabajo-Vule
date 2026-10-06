@@ -8,5 +8,6 @@ entrada_rangos/
 entrada_consolidados/
 Salida/
 entrada_estanques/
+entrada_planillas/
 *.xlsx
 *.xlsm

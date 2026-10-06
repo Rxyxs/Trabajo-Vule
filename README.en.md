@@ -6,7 +6,7 @@
 
 Real work for a bus company with 17 depots. Fuel was tracked in Excel sheets that each depot filled in separately: nobody could see the whole fleet's efficiency or reconcile what left the tanks with what went into the buses. The work had two stages:
 
-1. **Consolidation and efficiency (Python).** A script that merges every depot's sheets, computes each load's efficiency (km per litre) and flags the ones outside the range for the bus's model and emissions standard. That is `main.py`.
+1. **Consolidation and efficiency (Python).** Merges every depot's sheets into a daily consolidated file (`consolidar_planillas.py`), computes each load's efficiency in km per litre and flags the ones outside the range for the bus's model and emissions standard (`main.py`). It started as a VBA macro and then Jupyter notebooks that processed one file at a time; it ended up as scripts that process a whole folder.
 2. **Data-capture app (AppSheet).** A mobile app that replaced the sheets: the operator records each load, the pump readings and the tank stock, and the app computes consumption, theoretical stock, AdBlue, KMACC and REV. The app lives in AppSheet with the company's data and is not in this repository; `control_estanques.py` reimplements its tank logic in Python so it can be tested.
 
 The repository contains none of the company's data. `generar_ejemplo.py` creates fictitious data with the same structure.
@@ -14,13 +14,13 @@ The repository contains none of the company's data. `generar_ejemplo.py` creates
 ## Stage 1: consolidation and efficiency
 
 ```
-entrada_consolidados/*.xlsx  ─┐
-  (one sheet per depot)       │   clean times and plates
-                              ├─► sort by plate, date and time ─► KMACC and efficiency ─► Salida/REPORTE_RENDIMIENTO.xlsx
-entrada_rangos/Rangos.xlsx   ─┘   join with the range for its model and standard          (live formulas and colours)
+entrada_planillas/*.xlsm ─► consolidar_planillas.py ─► entrada_consolidados/YYYY-MM-DD.xlsx ─┐
+  (one per depot and day)     one file per day,          (all depots)                         ├─► main.py ─► Salida/REPORTE_RENDIMIENTO.xlsx
+                              all depots                 entrada_rangos/Rangos.xlsx ──────────┘             (live formulas and colours)
 ```
 
-- **Many sheets, one analysis.** Reads everything in `entrada_consolidados/` and skips, with a warning, any sheet missing the 13 required columns.
+- **Sheets built for printing, not analysis.** Each depot fills in an `.xlsm` with 15 rows of decorative header, checklist columns nobody uses and formatted empty rows down to the bottom. `consolidar_planillas.py` reads the actual table, cleans it and writes one consolidated file per day with every depot; sheets missing columns are skipped with a warning.
+- **The file name sets the date.** Each sheet covers one day. If the date typed inside doesn't match the file name, the load goes to the right day and a warning is printed, because that mistyped date also scrambles the km calculation.
 - **Hand-typed data.** Times came in as `830`, `8:30`, `22.40` or `23:05:00`; they end up as `HH:MM`. Plates, upper case with no spaces.
 - **Efficiency depends on the same bus's previous load**, which may have been at another depot. So all loads are sorted together to compute `KMACC` (km since the previous load) and `RENDIMIENTO` (`KMACC / LITROS`).
 - **Each model has its own normal range** (for example 1.5–2.2 km/L for one model and 1.9–3.8 for another). The `REV` column marks `BR` below the range and `CI` above it.
@@ -54,6 +54,13 @@ entrada_estanques/Estanques.xlsx  ─►  pair OPENING and CLOSING  ─►  TOTA
 - Computes `TOTAL N 1`, `TOTAL N 2`, `TOTAL ADBLUE`, theoretical stock and the **gap** against the measured tank level.
 - Flags shifts with a negative total or a consumption impossible for one shift, the fingerprints of a wrong pairing or an extra digit.
 
+## Tested on real sheets
+
+The repository only ships fictitious data, but the pipeline was run locally on 26 real sheets from two days (1,754 loads from 17 depots). That run found two data problems the fictitious data didn't have, which the code now handles:
+
+- **A whole sheet with the wrong month** (November instead of December, in both date columns). Those loads sorted a month early and produced **28 negative mileages**: the odometer seemed to go backwards.
+- **Rows holding only the row number** at the end or start of the table, which slipped in as empty loads.
+
 ## Bugs found while reviewing the code
 
 - **Date sorting was wrong across months.** The date was turned into `dd-mm-yyyy` text before sorting, and as text `02-01-2025` comes before `15-12-2024`. Whenever loads crossed a month boundary, km were computed against the wrong reading. It now sorts on the real date.
@@ -66,10 +73,11 @@ Each one has a test that reproduces it.
 
 ```bash
 pip install -r requirements.txt
-python generar_ejemplo.py     # fictitious data in entrada_rangos/, entrada_consolidados/ and entrada_estanques/
-python main.py                # Salida/REPORTE_RENDIMIENTO.xlsx
-python control_estanques.py   # Salida/CONTROL_ESTANQUES.xlsx
-pytest -q                     # 9 tests
+python generar_ejemplo.py       # fictitious data in entrada_planillas/, entrada_rangos/ and entrada_estanques/
+python consolidar_planillas.py  # entrada_consolidados/YYYY-MM-DD.xlsx
+python main.py                  # Salida/REPORTE_RENDIMIENTO.xlsx
+python control_estanques.py     # Salida/CONTROL_ESTANQUES.xlsx
+pytest -q                       # 13 tests
 ```
 
 With real data, the files go in the same folders. Every input and output folder, and any `.xlsx`, is git-ignored so operational data can't be committed by mistake.
@@ -77,7 +85,7 @@ With real data, the files go in the same folders. Every input and output folder,
 <details>
 <summary>Input file formats</summary>
 
-**Each depot's sheet (`B.D`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
+**Each depot's sheet:** a `Carga` sheet with the header on row 16 (the one with `KILOMETROS`). **Daily consolidated file (`B.D` sheet, written by `consolidar_planillas.py`):** `NUMERO INTERNO`, `PATENTE`, `ODOMETRO`, `LITROS`, `TERMINAL`, `FOLIO`, `FECHA PLANILLA`, `FECHA REAL`, `ROL`, `HORA`, `BOMBERO`, `TURNO`, `AD BLUE`.
 
 **`Rangos.xlsx`:** a `detalle` sheet (`PATENTE`, `N INTERNO`, `MODELO`, `NORMA`) and a `rango` sheet (`MODELO`, `NORMA`, `RANGO_MIN`, `RANGO_MAX`).
 
